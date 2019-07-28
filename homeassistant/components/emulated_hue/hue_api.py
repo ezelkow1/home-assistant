@@ -16,8 +16,10 @@ from homeassistant.components.fan import (
     SUPPORT_SET_SPEED)
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http.const import KEY_REAL_IP
+import homeassistant.util.color as color_util
 from homeassistant.components.light import (
-    ATTR_BRIGHTNESS, ATTR_HS_COLOR, SUPPORT_BRIGHTNESS, SUPPORT_COLOR)
+    ATTR_BRIGHTNESS, ATTR_HS_COLOR, SUPPORT_BRIGHTNESS, SUPPORT_COLOR_TEMP, SUPPORT_COLOR,
+    ATTR_RGB_COLOR, ATTR_COLOR_TEMP, ATTR_XY_COLOR)
 from homeassistant.components.media_player.const import (
     ATTR_MEDIA_VOLUME_LEVEL, SUPPORT_VOLUME_SET)
 from homeassistant.const import (
@@ -32,6 +34,14 @@ HUE_API_STATE_ON = 'on'
 HUE_API_STATE_BRI = 'bri'
 HUE_API_STATE_HUE = 'hue'
 HUE_API_STATE_SAT = 'sat'
+HUE_API_STATE_COLORMODE = 'colormode'
+HUE_API_STATE_CT = 'ct'
+HUE_API_STATE_XY = 'xy'
+
+HUE_API_DEVICE_TYPE_DIMMABLE = 'Dimmable light'
+HUE_API_DEVICE_TYPE_COLOR_TEMP = 'Color temperature light'
+HUE_API_DEVICE_TYPE_COLOR = 'Color light'
+HUE_API_DEVICE_TYPE_EXTENDED_COLOR = 'Extended color light'
 
 HUE_API_STATE_HUE_MAX = 65535.0
 HUE_API_STATE_SAT_MAX = 254.0
@@ -40,6 +50,9 @@ HUE_API_STATE_BRI_MAX = 255.0
 STATE_BRIGHTNESS = HUE_API_STATE_BRI
 STATE_HUE = HUE_API_STATE_HUE
 STATE_SATURATION = HUE_API_STATE_SAT
+STATE_COLORMODE = HUE_API_STATE_COLORMODE
+STATE_CT = HUE_API_STATE_CT
+STATE_XY = HUE_API_STATE_XY
 
 
 class HueUsernameView(HomeAssistantView):
@@ -267,6 +280,16 @@ class HueOneLightChangeView(HomeAssistantView):
                         hue = int((hue / HUE_API_STATE_HUE_MAX) * 360)
 
                         data[ATTR_HS_COLOR] = (hue, sat)
+                    elif parsed[STATE_XY] is not None:
+                        data[ATTR_XY_COLOR] = parsed[STATE_XY]
+                        data[ATTR_RGB_COLOR] = \
+                            color_util.color_xy_brightness_to_RGB(parsed[STATE_XY][0],
+                                                                  parsed[STATE_XY][1],
+                                                                  data[ATTR_BRIGHTNESS])
+                    if entity_features & SUPPORT_COLOR_TEMP:
+                        if parsed[STATE_CT] is not None:
+                            data[ATTR_COLOR_TEMP] = parsed[STATE_CT]
+
 
         # If the requested entity is a script add some variables
         elif entity.domain == script.DOMAIN:
@@ -471,6 +494,18 @@ def get_entity_state(config, entity):
         entity_features = entity.attributes.get(ATTR_SUPPORTED_FEATURES, 0)
 
         if entity.domain == light.DOMAIN:
+            if entity_features & SUPPORT_COLOR_TEMP:
+                color_temp = entity.attributes.get(ATTR_COLOR_TEMP, 0)
+                data[STATE_CT] = color_temp
+            if entity_features & SUPPORT_COLOR:
+                xy_color = entity.attributes.get(ATTR_XY_COLOR, [0.0, 0.0])
+                data[STATE_XY] = xy_color
+            elif entity_features & SUPPORT_COLOR:
+                rgb_color = entity.attributes.get(ATTR_RGB_COLOR, [0, 0, 0])
+                xy_color = color_util.color_RGB_to_xy(
+                    *(int(val) for val in rgb_color))
+                data[STATE_XY] = (xy_color[0], xy_color[1])
+
             if entity_features & SUPPORT_BRIGHTNESS:
                 pass
 
@@ -524,6 +559,9 @@ def entity_to_json(config, entity, state):
             HUE_API_STATE_BRI: state[STATE_BRIGHTNESS],
             HUE_API_STATE_HUE: state[STATE_HUE],
             HUE_API_STATE_SAT: state[STATE_SATURATION],
+            HUE_API_STATE_COLORMODE: state[STATE_COLORMODE],
+            HUE_API_STATE_CT: state[STATE_CT],
+            HUE_API_STATE_XY: state[STATE_XY],
             'reachable': True
         },
         'type': 'Dimmable light',
